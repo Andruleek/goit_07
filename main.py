@@ -1,189 +1,197 @@
-from datetime import datetime, timedelta
 from collections import UserDict
 
 class Field:
-    """Базовий клас для полів запису."""
-    pass
+    def __init__(self, value):
+        self.value = value
 
 class Name(Field):
-    """Клас для зберігання імені контакту."""
-    def __init__(self, name):
-        if not name:
-            raise ValueError("Ім'я не може бути порожнім")
-        self.value = name
-
-    def __str__(self):
-        return self.value
+    def __init__(self, value):
+        if not value:
+            raise ValueError("Name cannot be empty.")
+        super().__init__(value)
 
 class Phone(Field):
-    """Клас для зберігання номера телефону з валідацією."""
-    def __init__(self, phone):
-        if not phone.isdigit() or len(phone) != 10:
-            raise ValueError("Номер телефону має містити 10 цифр.")
-        self.value = phone
-
-    def __str__(self):
-        return self.value
+    def __init__(self, value):
+        if not value.isdigit() or len(value) != 10:
+            raise ValueError("Phone number must be 10 digits.")
+        super().__init__(value)
 
 class Birthday(Field):
-    """Клас для зберігання дня народження як рядка формату DD.MM.YYYY."""
     def __init__(self, value):
-        try:
-            datetime.strptime(value, "%d.%m.%Y")  
-            self.value = value  # Зберігаємо рядок
-        except ValueError:
-            raise ValueError("Невірний формат дати. Використовуйте DD.MM.YYYY")
-
-    def __str__(self):
-        return self.value
-
-    def get_congrats_date(self, current_year):
-        """Обчислює дату привітання з днем народження, враховуючи вихідні."""
-        birthday_date = datetime.strptime(self.value, "%d.%m.%Y").date()
-        birthday_this_year = birthday_date.replace(year=current_year)
-
-        if birthday_this_year < datetime.now().date():
-            birthday_this_year = birthday_this_year.replace(year=current_year + 1)
-
-        if birthday_this_year.weekday() >= 5:  # Субота або неділя
-            birthday_this_year += timedelta(days=(7 - birthday_this_year.weekday()))
-        return birthday_this_year
+        if not value:
+            self.value = None
+        else:
+            try:
+                year, month, day = map(int, value.split('-'))
+                if not (1 <= month <= 12) or not (1 <= day <= 31):
+                    raise ValueError("Invalid date format.")
+                self.value = value
+            except ValueError:
+                raise ValueError("Invalid date format. Use 'YYYY-MM-DD'")
 
 class Record:
-    """Клас для зберігання інформації про контакт."""
-    def __init__(self, name, birthday=None):
-        self.name = Name(name)
+    def __init__(self, name: Name, birthday: Birthday = None):
+        self.name = name
         self.phones = []
-        self.birthday = Birthday(birthday) if birthday else None
+        self.birthday = birthday
 
-    def add_phone(self, phone):
-        self.phones.append(Phone(phone))
+    def add_phone(self, phone: Phone):
+        self.phones.append(phone)
 
-    def remove_phone(self, phone):
-        for p in self.phones:
-            if p.value == phone:
-                self.phones.remove(p)
-                return
-        raise ValueError("Телефон не знайдено.")
+    def remove_phone(self, phone_value: str):
+        phone = self.find_phone(phone_value)
+        if phone:
+            self.phones.remove(phone)
+        else:
+            raise ValueError(f"Phone {phone_value} not found.")
 
-    def edit_phone(self, old_phone, new_phone):
-        for p in self.phones:
-            if p.value == old_phone:
-                p.value = Phone(new_phone).value
-                return
-        raise ValueError("Старий номер телефону не знайдено.")
+    def edit_phone(self, old_value: str, new_value: str):
+        old_phone = self.find_phone(old_value)
+        if old_phone:
+            self.phones.remove(old_phone)
+            self.phones.append(Phone(new_value))
+        else:
+            raise ValueError(f"Phone {old_value} not found.")
 
-    def find_phone(self, phone):
-        """Пошук телефону серед записів."""
-        for p in self.phones:
-            if p.value == phone:
-                return p
+    def find_phone(self, phone_value: str):
+        for phone in self.phones:
+            if phone.value == phone_value:
+                return phone
         return None
 
     def __str__(self):
-        phones = ", ".join(str(phone) for phone in self.phones)
-        birthday_str = f", День народження: {self.birthday}" if self.birthday else ""
-        return f"{self.name}: {phones}{birthday_str}"
+        phones = ", ".join(phone.value for phone in self.phones)
+        birthday = f" Birthday: {self.birthday.value}" if self.birthday and self.birthday.value else ""
+        return f"{self.name.value}: {phones}{birthday}"
 
 class AddressBook(UserDict):
-    """Клас для зберігання та управління записами."""
-    def add_record(self, record):
-        if record.name.value in self.data:
-            raise ValueError("Контакт з таким іменем вже існує.")
+    def add_record(self, record: Record):
         self.data[record.name.value] = record
 
-    def delete_record(self, name):
-        if name not in self.data:
-            raise ValueError("Контакт не знайдено.")
-        del self.data[name]
+    def find(self, name: str):
+        return self.data.get(name)
 
-    def search_record(self, name):
-        return self.data.get(name, None)
+    def delete(self, name: str):
+        if name in self.data:
+            del self.data[name]
+        else:
+            raise KeyError(f"Contact {name} not found.")
 
     def __str__(self):
         return "\n".join(str(record) for record in self.data.values())
 
+def add_contact(args, address_book):
+    if len(args) < 2 or len(args) > 3:
+        raise ValueError("Invalid input. Expected: add <name> <phone> [<birthday>]")
+
+    name, phone = args[:2]
+    birthday = args[2] if len(args) == 3 else None
+
+    record = address_book.find(name)
+    if record:
+        record.add_phone(Phone(phone))
+    else:
+        record = Record(Name(name), Birthday(birthday) if birthday else None)
+        record.add_phone(Phone(phone))
+        address_book.add_record(record)
+
+    return f"Contact {name} added/updated."
+
+def change_contact(args, address_book):
+    if len(args) != 3:
+        raise ValueError("Invalid input. Expected: change <name> <old_phone> <new_phone>")
+    name, old_phone, new_phone = args
+    record = address_book.find(name)
+    if not record:
+        raise KeyError(f"Contact {name} not found.")
+    record.edit_phone(old_phone, new_phone)
+    return f"Contact {name} updated."
+
+def show_phone(args, address_book):
+    if len(args) != 1:
+        raise ValueError("Invalid input. Expected: phone <name>")
+    name = args[0]
+    record = address_book.find(name)
+    if not record:
+        raise KeyError(f"Contact {name} not found.")
+    return str(record)
+
+def show_all(address_book):
+    return str(address_book) if address_book.data else "No contacts found."
+
+def add_birthday(args, address_book):
+    if len(args) != 2:
+        raise ValueError("Invalid input. Expected: add_birthday <name> <birthday>")
+    name, birthday_str = args
+    try:
+        birthday = Birthday(birthday_str)
+    except ValueError as e:
+        raise ValueError(f"Invalid birthday format: {e}")
+
+    record = address_book.find(name)
+    if record:
+        record.birthday = birthday
+        return f"Birthday for {name} added/updated."
+    else:
+        return f"Contact {name} not found."
+
+def parse_input(user_input):
+    parts = user_input.split()
+    cmd = parts[0].strip().lower()
+    args = parts[1:]
+    return cmd, args
+
 def main():
-    book = AddressBook()
-
+    address_book = AddressBook()
     while True:
-        command = input("\nВведіть команду (name, show_all, add_phone, edit_phone, remove_phone, delete, exit): ").strip().lower()
+        user_input = input("\nEnter a command: ").strip()
+        command, args = parse_input(user_input)
 
-        if command == "name":
-            name = input("Введіть ім'я: ").strip()
-            phone = input("Введіть номер телефону (10 цифр, або залиште порожнім): ").strip()
-            birthday = input("Введіть день народження (DD.MM.YYYY, або залиште порожнім): ").strip()
-            try:
-                record = Record(name, birthday)
-                if phone:
-                    record.add_phone(phone)
-                book.add_record(record)
-                print(f"Контакт {name} додано.")
-                if phone:
-                    print(f"Телефон {phone} додано до контакту {name}.")
-                if birthday:
-                    print(f"День народження {birthday} додано до контакту {name}.")
-            except ValueError as e:
-                print(f"Помилка: {e}")
-
-        elif command == "add_phone":
-            name = input("Введіть ім'я: ").strip()
-            phone = input("Введіть новий номер телефону: ").strip()
-            record = book.search_record(name)
-            if record:
-                try:
-                    record.add_phone(phone)
-                    print(f"Телефон {phone} додано до контакту {name}.")
-                except ValueError as e:
-                    print(f"Помилка: {e}")
+        try:
+            if command in ["close", "exit"]:
+                print("Good bye!")
+                break
+            elif command == "hello":
+                print("How can I help you?")
+            elif command == "add":
+                print(add_contact(args, address_book))
+            elif command == "change":
+                print(change_contact(args, address_book))
+            elif command == "phone":
+                print(show_phone(args, address_book))
+            elif command == "all":
+                print(show_all(address_book))
+            elif command == "remove_phone":
+                if len(args) != 2:
+                    raise ValueError("Invalid input. Expected: remove_phone <name> <phone>")
+                contact_name, phone_number = args
+                record = address_book.find(contact_name)
+                if record:
+                    record.remove_phone(phone_number)
+                    print(f"Phone number {phone_number} removed from contact {contact_name}.")
+                else:
+                    print(f"Contact {contact_name} not found.")
+            elif command == "find_phone":
+                if len(args) != 1:
+                    raise ValueError("Invalid input. Expected: find_phone <phone>")
+                phone_number = args[0]
+                found = False
+                for contact_name, contact in address_book.items():
+                    if contact.find_phone(phone_number):
+                        print(f"Phone number {phone_number} belongs to contact {contact_name}.")
+                        found = True
+                        break
+                if not found:
+                    print(f"Phone number {phone_number} not found.")
+            elif command == "add_birthday":
+                print(add_birthday(args, address_book))
             else:
-                print("Контакт не знайдено.")
-
-        elif command == "edit_phone":
-            name = input("Введіть ім'я: ").strip()
-            old_phone = input("Введіть старий номер телефону: ").strip()
-            new_phone = input("Введіть новий номер телефону: ").strip()
-            record = book.search_record(name)
-            if record:
-                try:
-                    record.edit_phone(old_phone, new_phone)
-                    print(f"Номер телефону змінено на {new_phone}.")
-                except ValueError as e:
-                    print(f"Помилка: {e}")
-            else:
-                print("Контакт не знайдено.")
-
-        elif command == "remove_phone":
-            name = input("Введіть ім'я: ").strip()
-            phone = input("Введіть номер телефону для видалення: ").strip()
-            record = book.search_record(name)
-            if record:
-                try:
-                    record.remove_phone(phone)
-                    print(f"Телефон {phone} видалено.")
-                except ValueError as e:
-                    print(f"Помилка: {e}")
-            else:
-                print("Контакт не знайдено.")
-
-        elif command == "delete":
-            name = input("Введіть ім'я контакту для видалення: ").strip()
-            try:
-                book.delete_record(name)
-                print(f"Контакт {name} видалено.")
-            except ValueError as e:
-                print(f"Помилка: {e}")
-
-        elif command == "show_all":
-            print("Адресна книга:")
-            print(book)
-
-        elif command == "exit":
-            print("До побачення!")
-            break
-
-        else:
-            print("Невідома команда. Спробуйте ще раз.")
+                print("Invalid command. Type 'hello' for assistance.")
+        except ValueError as ve:
+            print(f"ValueError: {ve}")
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
+    
